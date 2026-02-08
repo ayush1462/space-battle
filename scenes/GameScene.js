@@ -1,3 +1,7 @@
+
+import Player from "../entities/Player.js";
+import Enemy from "../entities/Enemy.js";
+
 export default class GameScene extends Phaser.Scene {
   constructor() {
     super("GameScene");
@@ -17,15 +21,9 @@ export default class GameScene extends Phaser.Scene {
   }
   create() {
     this.add.image(300, 300, "bg");
-    this.player = this.physics.add.sprite(180, 600, "player");
+    this.player = new Player(this, 180, 600);
     this.player.setInteractive();
-    this.input.setDraggable(this.player);
-    this.input.on("drag", (pointer, gameObject, dragX, dragY) => {
-      gameObject.x = dragX;
-      gameObject.y = dragY;
-    });
-    this.player.setVelocityX(0);
-    this.player.setCollideWorldBounds(true);
+    this.player.enableDrag();
     this.cursors = this.input.keyboard.createCursorKeys();
     console.log(this.player.x);
     this.enemies = this.physics.add.group();
@@ -36,24 +34,17 @@ export default class GameScene extends Phaser.Scene {
     });
     this.shootEvent = this.time.addEvent({
       delay: 100,
-      callback: shoot,
-      callbackScope: this,
+      callback: () => this.player.shoot(this.bullets),
       loop: true,
     });
-    function shoot() {
-      let bullet = this.bullets.get(
-        this.player.x,
-        this.player.y - 20,
-        "bullet"
-      );
-      if (!bullet) return;
-      bullet.setActive(true);
-      bullet.setVisible(true);
-      bullet.body.enable = true;
-      bullet.setVelocityY(-400);
-    }
-    
-    this.physics.add.overlap(this.bullets, this.enemies, this.enemyShot, null, this);
+
+    this.physics.add.overlap(
+      this.bullets,
+      this.enemies,
+      this.enemyHitEvent,
+      null,
+      this
+    );
     this.anims.create({
       key: "enemyExplosion",
       frames: [
@@ -90,50 +81,19 @@ export default class GameScene extends Phaser.Scene {
   addEnemy(targetX, targetY) {
     const spawnX = Phaser.Math.Between(50, this.scale.width - 50);
     const spawnY = -60;
-    const enemy = this.enemies.create(spawnX, spawnY, "enemy");
-    enemy.setScale(0.5);
-    enemy.setAlpha(0);
-    enemy.setAngle(Phaser.Math.Between(-180, 180));
-    enemy.health = 3;
-    enemy.isDying = false;
-    enemy.targetX = targetX;
-    enemy.targetY = targetY;
-    enemy.state = "ENTERING";
-    this.tweens.add({
-      targets: enemy,
-      x: this.scale.width / 2,
-      y: 150,
-      angle: 0,
-      alpha: 1,
-      duration: 700,
-      ease: "Sine.easeOut",
-      onComplete: () => {
-        this.time.delayedCall(300, () => {
-          this.tweens.add({
-            targets: enemy,
-            x: enemy.targetX,
-            y: enemy.targetY,
-            duration: 600,
-            ease: "Sine.easeInOut",
-            onComplete: () => {
-              enemy.state = "HOLD";
-            }
-          });
-        });
-      }
-    });
+
+    const enemy = new Enemy(this, spawnX, spawnY, targetX, targetY);
+    this.enemies.add(enemy);
   }
-  enemyShot(bullet, enemy) {
+
+  enemyHitEvent(bullet, enemy) {
     bullet.disableBody(true, true);
-    enemy.body.enable = false;
-    enemy.setVisible = false;
-    let explosion = this.add.sprite(enemy.x, enemy.y, "blast_1_01");
-    explosion.anims.play("enemyExplosion");
-    explosion.on("animationcomplete", () => {
-      explosion.destroy();
-      enemy.destroy();
-    });
-      }
+    enemy.takeDamage();
+  }
+
+  enemyAttack(enemy) {
+    this.physics.moveToObject(enemy, this.player, 0.5);
+  }
   update() {
     if (this.cursors.left.isDown) {
       this.player.setVelocityX(-50);
@@ -148,6 +108,11 @@ export default class GameScene extends Phaser.Scene {
         bullet.setActive(false);
         bullet.setVisible(false);
         bullet.body.enable = false;
+      }
+    });
+    this.enemies.children.each((enemy) => {
+      if (enemy && enemy.active) {
+        enemy.update(this.player);
       }
     });
   }
