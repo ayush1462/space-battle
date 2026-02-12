@@ -1,7 +1,7 @@
-
 import Player from "../entities/Player.js";
 import Enemy from "../entities/Enemy.js";
 
+import {Levels} from "../levels/levelData.js"
 export default class GameScene extends Phaser.Scene {
   constructor() {
     super("GameScene");
@@ -19,6 +19,12 @@ export default class GameScene extends Phaser.Scene {
       );
     }
   }
+  init(data) {
+    this.levelIndex = data.levelIndex || 0;
+    this.level = Levels[this.levelIndex];
+    this.currentWaveIndex = 0;
+    this.currentWave = null;
+  }
   create() {
     this.add.image(300, 300, "bg");
     this.player = new Player(this, 180, 600);
@@ -27,7 +33,6 @@ export default class GameScene extends Phaser.Scene {
     this.cursors = this.input.keyboard.createCursorKeys();
     console.log(this.player.x);
     this.enemies = this.physics.add.group();
-    this.enemyArcFormation(20);
     this.bullets = this.physics.add.group({
       maxSize: 100,
       allowGravity: false,
@@ -45,6 +50,14 @@ export default class GameScene extends Phaser.Scene {
       null,
       this
     );
+    this.physics.add.overlap(
+      this.player,
+      this.enemies,
+      this.gameOver,
+      null,
+      this
+    );
+    this.physics.add.collider(this.enemies, this.enemies);
     this.anims.create({
       key: "enemyExplosion",
       frames: [
@@ -61,39 +74,75 @@ export default class GameScene extends Phaser.Scene {
       frameRate: 25,
       repeat: 0,
     });
+
+    this.startWave();
   }
-  enemyArcFormation(enemyCount = 12) {
-    const centerX = this.scale.width / 2;
-    const centerY = 200;
-    const radius = 170;
-    const startAngle = Phaser.Math.DegToRad(-90);
-    const endAngle = Phaser.Math.DegToRad(250);
-    const angleStep = (endAngle - startAngle) / (enemyCount - 1);
-    for (let i = 0; i < enemyCount; i++) {
-      const angle = startAngle + angleStep * i;
-      const targetX = centerX + Math.cos(angle) * radius;
-      const targetY = centerY + Math.sin(angle) * radius;
-      this.time.delayedCall(i * 120, () => {
-        this.addEnemy(targetX, targetY);
-      });
+  startWave() {
+    this.currentWave = this.level.waves[this.currentWaveIndex];
+
+    if (!this.currentWave) {
+      this.levelComplete();
+      return;
     }
+
+    this.spawnTimer = this.time.addEvent({
+      delay: this.currentWave.spawnInterval,
+      loop: true,
+      callback: () => {
+        if (this.enemies.countActive(true) < this.currentWave.maxAlive) {
+          this.spawnEnemyFromWave();
+        }
+      },
+    });
+
+    if (this.currentWave.duration) {
+      this.time.delayedCall(this.currentWave.duration, () => this.endWave());
+    }
+    console.log(`Wave ${this.currentWaveIndex + 1} started`);
   }
-  addEnemy(targetX, targetY) {
+  spawnEnemyFromWave() {
+    const types = this.currentWave.enemyTypes;
+    const type = types[Phaser.Math.Between(0, types.length - 1)];
+
     const spawnX = Phaser.Math.Between(50, this.scale.width - 50);
     const spawnY = -60;
 
-    const enemy = new Enemy(this, spawnX, spawnY, targetX, targetY);
+    const targetY = Phaser.Math.Between(100, 250);
+    const enemy = new Enemy(this, spawnX, spawnY, spawnX, targetY);
+    enemy.setType(type);
     this.enemies.add(enemy);
   }
+  endWave() {
+    if (this.spawnTimer) this.spawnTimer.remove(false);
+    this.currentWaveIndex++;
+    if (this.currentWaveIndex < this.level.waves.length) {
+      this.startWave();
+    } else {
+      this.levelComplete();
+    }
+  }
 
+  levelComplete() {
+    console.log("Level Complete");
+    this.scene.restart({ levelIndex: this.levelIndex + 1 });
+  }
   enemyHitEvent(bullet, enemy) {
     bullet.disableBody(true, true);
     enemy.takeDamage();
-  }
 
-  enemyAttack(enemy) {
-    this.physics.moveToObject(enemy, this.player, 0.5);
+    if (enemy.type==="boss" && enemy.health<=0) {
+      this.endWave();
+    }
   }
+  gameOver() {
+    this.player.takeDamage(100);
+    this.enemies.children.iterate((enemy) => {
+      enemy.setVelocity(0, 0);
+      enemy.body.enable = false;
+    });
+
+  }
+  
   update() {
     if (this.cursors.left.isDown) {
       this.player.setVelocityX(-50);

@@ -9,9 +9,10 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.health = 100;
     this.maxHealth = 100;
+    this.playerAlive = true;
 
-    this.fireRate = 50;
-    this.lastShotTime = 0;
+    this.fireRate = 100;
+    this.lastShot = 0;
 
     this.setCollideWorldBounds(true);
   }
@@ -40,11 +41,21 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     this.lastShot = now;
 
     const bullet = bulletsGroup.get(this.x, this.y - 20, "bullet");
-    if (!bullet) return;
+    if (!bullet || !this.playerAlive) return;
 
     bullet.setActive(true);
     bullet.setVisible(true);
     bullet.body.enable = true;
     bullet.setVelocityY(-400);
+  }
+  takeDamage(amount) {
+    this.health -= amount;
+    if (this.health <= 0) {
+      this.die();
+    }
+  }
+  die() {
+    this.disableBody(true, true);
+    this.playerAlive = false;
   }
 }
